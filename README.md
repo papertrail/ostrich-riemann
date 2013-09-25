@@ -14,11 +14,11 @@ new KestrelConfig {
 
   admin.statsNodes = new StatsConfig {
     reporters = new RiemannStatsLoggerConfig(
-      period = 1.second,         // default: 1.minute
-      prefix = "kestrel",        // default: None
-      host = "riemann01",        // default: localhost
-      port = 4444,               // default: 5555
-      localHostname = "kestrel01 // default: [local hostname]
+      period = 1.second,          // default: 1.minute
+      prefix = "kestrel",         // default: None
+      host = "riemann01",         // default: localhost
+      port = 4444,                // default: 5555
+      localHostname = "kestrel01" // default: [local hostname]
     )
   }
 }
