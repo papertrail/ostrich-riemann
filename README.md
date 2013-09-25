@@ -1,6 +1,6 @@
 # ostrich-riemann
 
-An [ostrich][https://github.com/twitter/ostrich] reporter for [riemann][https://github.com/aphyr/riemann].
+An [ostrich](https://github.com/twitter/ostrich) reporter for [riemann](https://github.com/aphyr/riemann).
 
 ## Usage
 
