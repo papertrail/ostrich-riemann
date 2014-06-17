@@ -2,7 +2,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.papertrailapp</groupId>
   <artifactId>ostrich-riemann</artifactId>
-  <version>0.1-SNAPSHOT</version>
+  <version>0.2-SNAPSHOT</version>
   <name>${project.artifactId}</name>
   <description>Ostrich adapter to send to riemann</description>
   <inceptionYear>2013</inceptionYear>
