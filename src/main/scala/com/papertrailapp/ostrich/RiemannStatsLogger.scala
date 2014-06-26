@@ -1,7 +1,9 @@
 package com.papertrailapp.ostrich
 
+import java.util.concurrent.{TimeUnit, ScheduledFuture}
+
 import com.aphyr.riemann.Proto
-import com.twitter.ostrich.admin.{AdminHttpService, PeriodicBackgroundProcess}
+import com.twitter.ostrich.admin.{Service, AdminHttpService, PeriodicBackgroundProcess}
 import com.aphyr.riemann.client.RiemannClient
 import com.twitter.ostrich.stats.{Distribution, StatsListener, StatsCollection}
 import java.net.InetAddress
@@ -34,34 +36,32 @@ class RiemannStatsLogger(val host: String,
                          val tags: Seq[String] = Seq(),
                          val percentiles: Seq[Double] = Seq(0.50, 0.75, 0.95, 0.99),
                          val period: Duration,
-                         val collection: StatsCollection)
-  extends PeriodicBackgroundProcess("RiemannStatsLogger", period) {
+                         val collection: StatsCollection) extends Service {
 
   val logger = Logger.get(getClass.getName)
-  val client = RiemannClient.tcp(host, port)
+  val riemann = RiemannClient.tcp(host, port)
   val listener = new StatsListener(collection)
   val localHostname: String = _localHostname.getOrElse(getLocalHostname)
-  var lastDeadline = Time.now
+  var schedule: ScheduledFuture[_] = null
 
-  override def nextRun: Duration = {
-    val now = Time.now
-
-    if (lastDeadline < now) {
-      lastDeadline = lastDeadline + period
-    }
-
-    var duration = lastDeadline - now
-
-    if (duration < 0) {
-      lastDeadline = Time.fromMilliseconds((now.inMilliseconds / period.inMilliseconds) * period.inMilliseconds)
-    }
-
-    duration
+  def start() = synchronized {
+    schedule = riemann.every(period.inNanoseconds, period.inNanoseconds, TimeUnit.NANOSECONDS,
+      new Runnable() { override def run() = report })
   }
 
-  def periodic() {
+  def shutdown() = synchronized {
+    if (schedule != null) {
+      schedule.cancel(true)
+      schedule = null
+    }
+
+    report
+    riemann.disconnect()
+  }
+
+  def report() {
     try {
-      client.connect()
+      riemann.connect()
 
       val stats = listener.get()
       var events = List[Proto.Event]()
@@ -102,14 +102,14 @@ class RiemannStatsLogger(val host: String,
         }
       }
 
-      client.sendEventsWithAck(events.toList)
+      riemann.sendEventsWithAck(events.toList)
     } catch {
       case ex: Throwable => logger.warning("Could not submit riemann metrics", ex)
     }
   }
 
   def newEvent = {
-    val event = client.event()
+    val event = riemann.event()
 
     event.host(localHostname)
     event.ttl(period.inSeconds * 5)
