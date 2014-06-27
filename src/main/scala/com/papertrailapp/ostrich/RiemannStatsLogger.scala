@@ -102,9 +102,17 @@ class RiemannStatsLogger(val host: String,
         }
       }
 
-      riemann.sendEventsWithAck(events.toList)
+      val promise = riemann.aSendEventsWithAck(events.toList)
+
+      if (!promise.deref(period.inNanoseconds, TimeUnit.NANOSECONDS, true)) {
+        logger.warning("Timeout after %s while submitting riemann metrics", period)
+        riemann.disconnect()
+      }
     } catch {
-      case ex: Throwable => logger.warning("Could not submit riemann metrics", ex)
+      case ex: Throwable => {
+        logger.warning(ex, "Could not submit riemann metrics")
+        riemann.disconnect()
+      }
     }
   }
 
