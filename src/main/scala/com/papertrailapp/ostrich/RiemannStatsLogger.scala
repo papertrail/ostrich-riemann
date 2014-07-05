@@ -13,18 +13,19 @@ import com.twitter.conversions.time._
 import com.twitter.ostrich.admin.config.{StatsReporterConfig, JsonStatsLoggerConfig}
 import com.twitter.logging.Logger
 
-class RiemannStatsLoggerConfig(var period: Duration = 1.minute,
-                               var prefix: Option[String] = None,
-                               var host: String = "localhost",
-                               var localHostname: Option[String] = None,
-                               var shortLocalHostname: Boolean = true,
-                               var port: Int = 5555,
-                               var tags: Seq[String] = Seq(),
-                               val percentiles: Seq[Double] = Seq(0.50, 0.75, 0.95, 0.99))
+class RiemannStatsLoggerConfig(period: Duration = 1.minute,
+                               prefix: Option[String] = None,
+                               host: String = "localhost",
+                               localHostname: Option[String] = None,
+                               shortLocalHostname: Boolean = true,
+                               port: Int = 5555,
+                               tags: Seq[String] = Seq(),
+                               percentiles: Seq[Double] = Seq(0.50, 0.75, 0.95, 0.99),
+                               ttl: java.lang.Integer = null)
   extends StatsReporterConfig {
 
   def apply() = { (collection: StatsCollection, admin: AdminHttpService) =>
-    new RiemannStatsLogger(host, port, prefix, localHostname, shortLocalHostname, tags, percentiles, period, collection)
+    new RiemannStatsLogger(host, port, prefix, localHostname, shortLocalHostname, tags, percentiles, period, collection, ttl)
   }
 }
 
@@ -36,13 +37,22 @@ class RiemannStatsLogger(val host: String,
                          val tags: Seq[String] = Seq(),
                          val percentiles: Seq[Double] = Seq(0.50, 0.75, 0.95, 0.99),
                          val period: Duration,
-                         val collection: StatsCollection) extends Service {
+                         val collection: StatsCollection,
+                         _ttl: java.lang.Integer = null) extends Service {
 
   val logger = Logger.get(getClass.getName)
   val riemann = RiemannClient.tcp(host, port)
   val listener = new StatsListener(collection)
   val localHostname: String = _localHostname.getOrElse(getLocalHostname)
   var schedule: ScheduledFuture[_] = null
+
+  val ttl: Float = {
+    if (_ttl != null) {
+      ttl
+    } else {
+      period.inSeconds * 5
+    }
+  }
 
   def start() = synchronized {
     schedule = riemann.every(period.inNanoseconds, period.inNanoseconds, TimeUnit.NANOSECONDS,
@@ -120,7 +130,7 @@ class RiemannStatsLogger(val host: String,
     val event = riemann.event()
 
     event.host(localHostname)
-    event.ttl(period.inSeconds * 5)
+    event.ttl(ttl)
     event.tags(tags)
 
     event
