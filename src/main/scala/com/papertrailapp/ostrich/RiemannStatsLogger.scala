@@ -21,7 +21,7 @@ class RiemannStatsLoggerConfig(period: Duration = 1.minute,
                                port: Int = 5555,
                                tags: Seq[String] = Seq(),
                                percentiles: Seq[Double] = Seq(0.50, 0.75, 0.95, 0.99),
-                               ttl: java.lang.Integer = null)
+                               ttl: Duration = null)
   extends StatsReporterConfig {
 
   def apply() = { (collection: StatsCollection, admin: AdminHttpService) =>
@@ -38,7 +38,7 @@ class RiemannStatsLogger(val host: String,
                          val percentiles: Seq[Double] = Seq(0.50, 0.75, 0.95, 0.99),
                          val period: Duration,
                          val collection: StatsCollection,
-                         _ttl: java.lang.Integer = null) extends Service {
+                         _ttl: Duration = null) extends Service {
 
   val logger = Logger.get(getClass.getName)
   val riemann = RiemannClient.tcp(host, port)
@@ -48,7 +48,7 @@ class RiemannStatsLogger(val host: String,
 
   val ttl: Float = {
     if (_ttl != null) {
-      ttl
+      _ttl.inSeconds
     } else {
       period.inSeconds * 5
     }
