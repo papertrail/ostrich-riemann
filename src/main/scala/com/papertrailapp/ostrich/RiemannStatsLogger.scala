@@ -114,7 +114,7 @@ class RiemannStatsLogger(val host: String,
 
       val promise = riemann.aSendEventsWithAck(events.toList)
 
-      if (!promise.deref(period.inNanoseconds, TimeUnit.NANOSECONDS, true)) {
+      if (!promise.deref(period.inNanoseconds, TimeUnit.NANOSECONDS, false)) {
         logger.warning("Timeout after %s while submitting riemann metrics", period)
         riemann.disconnect()
       }
