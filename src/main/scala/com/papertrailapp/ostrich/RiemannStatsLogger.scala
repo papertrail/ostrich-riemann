@@ -55,7 +55,7 @@ class RiemannStatsLogger(val host: String,
   }
 
   def start() = synchronized {
-    schedule = riemann.every(period.inNanoseconds, period.inNanoseconds, TimeUnit.NANOSECONDS,
+    schedule = riemann.scheduler().every(period.inNanoseconds, period.inNanoseconds, TimeUnit.NANOSECONDS,
       new Runnable() { override def run() = report })
   }
 
@@ -66,7 +66,7 @@ class RiemannStatsLogger(val host: String,
     }
 
     report
-    riemann.disconnect()
+    riemann.close()
   }
 
   def report() {
@@ -112,16 +112,16 @@ class RiemannStatsLogger(val host: String,
         }
       }
 
-      val promise = riemann.aSendEventsWithAck(events.toList)
+      val promise = riemann.sendEvents(events.toList)
 
-      if (!promise.deref(period.inNanoseconds, TimeUnit.NANOSECONDS, false)) {
+      if (promise.deref(period.inNanoseconds, TimeUnit.NANOSECONDS) == null) {
         logger.warning("Timeout after %s while submitting riemann metrics", period)
-        riemann.disconnect()
+        riemann.close()
       }
     } catch {
       case ex: Throwable => {
         logger.warning(ex, "Could not submit riemann metrics")
-        riemann.disconnect()
+        riemann.close()
       }
     }
   }
