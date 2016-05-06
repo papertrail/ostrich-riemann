@@ -21,11 +21,12 @@ class RiemannStatsLoggerConfig(period: Duration = 1.minute,
                                port: Int = 5555,
                                tags: Seq[String] = Seq(),
                                percentiles: Seq[Double] = Seq(0.50, 0.75, 0.95, 0.99),
+                               closeOnTimeout: Boolean = true,
                                ttl: Duration = null)
   extends StatsReporterConfig {
 
   def apply() = { (collection: StatsCollection, admin: AdminHttpService) =>
-    new RiemannStatsLogger(host, port, prefix, localHostname, shortLocalHostname, tags, percentiles, period, collection, ttl)
+    new RiemannStatsLogger(host, port, prefix, localHostname, shortLocalHostname, tags, percentiles, period, collection, closeOnTimeout, ttl)
   }
 }
 
@@ -38,6 +39,7 @@ class RiemannStatsLogger(val host: String,
                          val percentiles: Seq[Double] = Seq(0.50, 0.75, 0.95, 0.99),
                          val period: Duration,
                          val collection: StatsCollection,
+                         val closeOnTimeout: Boolean = true,
                          _ttl: Duration = null) extends Service {
 
   val logger = Logger.get(getClass.getName)
@@ -74,10 +76,10 @@ class RiemannStatsLogger(val host: String,
       riemann.connect()
 
       val stats = listener.get()
-      var events = List[Proto.Event]()
+      var buffer = List[Proto.Event]()
 
       for ((key, value) <- stats.counters) {
-        events ::= newEvent
+        buffer ::= newEvent
           .service(keyWithPrefix(key))
           .metric(value.doubleValue)
           .tags("ostrich", "ostrich-count")
@@ -85,7 +87,7 @@ class RiemannStatsLogger(val host: String,
       }
 
       for ((key, value) <- stats.gauges) {
-        events ::= newEvent
+        buffer ::= newEvent
           .service(keyWithPrefix(key))
           .metric(value.doubleValue)
           .tags("ostrich")
@@ -93,7 +95,7 @@ class RiemannStatsLogger(val host: String,
       }
 
       for ((key, distribution) <- stats.metrics) {
-        events ::= newEvent
+        buffer ::= newEvent
           .service(keyWithPrefix(key + " count"))
           .metric(distribution.count)
           .tags("ostrich", "ostrich-count")
@@ -104,7 +106,7 @@ class RiemannStatsLogger(val host: String,
         for (percentile <- percentiles) {
           val percentileName = percentileToName(percentile)
 
-          events ::= newEvent
+          buffer ::= newEvent
             .service(keyWithPrefix(key + " " + percentileName))
             .metric(histogram.getPercentile(percentile))
             .tags("ostrich", "ostrich-" + percentileName)
@@ -112,11 +114,17 @@ class RiemannStatsLogger(val host: String,
         }
       }
 
-      val promise = riemann.sendEvents(events.toList)
+      val events = buffer.toList
 
-      if (promise.deref(period.inNanoseconds, TimeUnit.NANOSECONDS) == null) {
-        logger.warning("Timeout after %s while submitting riemann metrics", period)
-        riemann.close()
+      if (events.nonEmpty) {
+        val promise = riemann.sendEvents(events)
+
+        if (promise.deref(period.inNanoseconds, TimeUnit.NANOSECONDS) == null) {
+          logger.warning("Timeout after %s while submitting %d metrics to riemann", period, events.length)
+          if (closeOnTimeout) {
+            riemann.close()
+          }
+        }
       }
     } catch {
       case ex: Throwable => {
