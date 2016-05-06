@@ -1,17 +1,20 @@
 package com.papertrailapp.ostrich
 
-import java.util.concurrent.{TimeUnit, ScheduledFuture}
+import java.util.concurrent.{ScheduledFuture, TimeUnit}
 
 import com.aphyr.riemann.Proto
-import com.twitter.ostrich.admin.{Service, AdminHttpService, PeriodicBackgroundProcess}
+import com.twitter.ostrich.admin.{AdminHttpService, PeriodicBackgroundProcess, Service}
 import com.aphyr.riemann.client.RiemannClient
-import com.twitter.ostrich.stats.{Distribution, StatsListener, StatsCollection}
+import com.twitter.ostrich.stats.{Distribution, StatsCollection, StatsListener}
 import java.net.InetAddress
+
 import collection.JavaConversions._
-import com.twitter.util.{Time, Duration}
+import com.twitter.util.{Duration, Time}
 import com.twitter.conversions.time._
-import com.twitter.ostrich.admin.config.{StatsReporterConfig, JsonStatsLoggerConfig}
+import com.twitter.ostrich.admin.config.{JsonStatsLoggerConfig, StatsReporterConfig}
 import com.twitter.logging.Logger
+
+import scala.util.matching.Regex
 
 class RiemannStatsLoggerConfig(period: Duration = 1.minute,
                                prefix: Option[String] = None,
@@ -22,11 +25,13 @@ class RiemannStatsLoggerConfig(period: Duration = 1.minute,
                                tags: Seq[String] = Seq(),
                                percentiles: Seq[Double] = Seq(0.50, 0.75, 0.95, 0.99),
                                closeOnTimeout: Boolean = true,
+                               filterMetrics: Option[Regex] = None,
                                ttl: Duration = null)
   extends StatsReporterConfig {
 
   def apply() = { (collection: StatsCollection, admin: AdminHttpService) =>
-    new RiemannStatsLogger(host, port, prefix, localHostname, shortLocalHostname, tags, percentiles, period, collection, closeOnTimeout, ttl)
+    new RiemannStatsLogger(host, port, prefix, localHostname, shortLocalHostname, tags, percentiles, period,
+      collection, closeOnTimeout, filterMetrics, ttl)
   }
 }
 
@@ -40,6 +45,7 @@ class RiemannStatsLogger(val host: String,
                          val period: Duration,
                          val collection: StatsCollection,
                          val closeOnTimeout: Boolean = true,
+                         val filterMetrics: Option[Regex] = None,
                          _ttl: Duration = null) extends Service {
 
   val logger = Logger.get(getClass.getName)
@@ -75,8 +81,12 @@ class RiemannStatsLogger(val host: String,
     try {
       riemann.connect()
 
-      val stats = listener.get()
       var buffer = List[Proto.Event]()
+
+      var stats = listener.get()
+      for (regex <- filterMetrics) {
+        stats = stats.filterOut(regex)
+      }
 
       for ((key, value) <- stats.counters) {
         buffer ::= newEvent
